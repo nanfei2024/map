@@ -1,18 +1,10 @@
 <template>
   <div class="file-details">
     <h2>文件详情</h2>
-    <el-row gutter={20}>
-      <!-- 左侧：PDF 和概述 -->
-      <el-col :span="12">
+    <el-row :gutter="20">
+      <!-- 左侧：概述 + PDF -->
+      <el-col :span="8">
         <div class="left-panel">
-          <h3>文章 PDF</h3>
-          <div v-if="file?.file_type === 'article'">
-            <div id="pdf-container"></div> <!-- PDF 渲染区域 -->
-          </div>
-          <div v-else>
-            <p>暂无 PDF 文件</p>
-          </div>
-
           <h3>文章概述</h3>
           <div v-if="file?.details">
             <p>{{ file.details }}</p>
@@ -20,11 +12,29 @@
           <div v-else>
             <p>暂无概述</p>
           </div>
+
+          <h3>PDF文件</h3>
+          <div v-if="isPdf">
+            <div id="pdf-container"></div> <!-- PDF 渲染区域 -->
+          </div>
+        </div>
+      </el-col>
+
+      <!-- 中间：MD 文件 -->
+      <el-col :span="8">
+        <div class="middle-panel">
+          <h3>Markdown 文件</h3>
+          <div v-if="isMd">
+            <div id="md-container" v-html="markdownContent"></div> <!-- Markdown 渲染区域 -->
+          </div>
+          <div v-else>
+            <p>暂无Markdown文件</p>
+          </div>
         </div>
       </el-col>
 
       <!-- 右侧：图片 -->
-      <el-col :span="12">
+      <el-col :span="8">
         <div class="right-panel">
           <h3>文件图片</h3>
           <div v-if="file?.file_type === 'image'">
@@ -46,6 +56,7 @@ import { defineComponent, ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import * as pdfjsLib from 'pdfjs-dist';
+import { marked } from 'marked'; // 引入marked.js用于渲染Markdown
 
 // 设置 Worker 的路径，确保路径正确指向你的 pdf.worker.min.mjs 文件
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
@@ -61,6 +72,9 @@ interface FileDetail {
 export default defineComponent({
   setup() {
     const file = ref<FileDetail | null>(null);
+    const markdownContent = ref<string>(''); // 用于存储渲染后的 Markdown 内容
+    const isPdf = ref(false);  // 判断是否是PDF文件
+    const isMd = ref(false);   // 判断是否是MD文件
     const route = useRoute();
     const router = useRouter();
     const currentPage = ref(1); // 当前页码
@@ -73,10 +87,19 @@ export default defineComponent({
         const response = await fetch(`http://localhost:8080/api/files/details/${fileId}`);
         if (response.ok) {
           file.value = await response.json();
-          if (file.value?.file_type === 'article') {
-            // 获取相对路径后拼接完整的 URL
-            const pdfUrl = `http://localhost:8080${file.value.file_path}`;
-            loadPdf(pdfUrl); // 加载 PDF
+          const filePath = file.value?.file_path;
+          
+          if (filePath) {
+            // 判断文件类型
+            const fileExtension = filePath.split('.').pop()?.toLowerCase(); // 获取文件后缀
+
+            if (fileExtension === 'pdf') {
+              isPdf.value = true;
+              loadPdf(`http://localhost:8080${filePath}`);  // 加载 PDF
+            } else if (fileExtension === 'md') {
+              isMd.value = true;
+              loadMarkdown(`http://localhost:8080${filePath}`);  // 加载 Markdown
+            }
           }
         } else {
           console.error('获取文件详情失败', await response.text());
@@ -147,6 +170,22 @@ export default defineComponent({
       });
     };
 
+    // 加载Markdown文件
+    const loadMarkdown = async (url: string) => {
+      try {
+        const response = await fetch(url);
+        if (response.ok) {
+          const mdContent = await response.text();
+          markdownContent.value = marked(mdContent);  // 通过marked解析Markdown内容
+        } else {
+          ElMessage.error('加载 Markdown 文件失败');
+        }
+      } catch (error) {
+        console.error('加载 Markdown 失败', error);
+        ElMessage.error('加载 Markdown 文件失败');
+      }
+    };
+
     const goBack = () => {
       router.go(-1);
     };
@@ -156,6 +195,9 @@ export default defineComponent({
     return {
       file,
       goBack,
+      markdownContent,
+      isPdf,
+      isMd,
     };
   },
 });
@@ -164,33 +206,139 @@ export default defineComponent({
 <style scoped>
 .file-details {
   padding: 20px;
-}
-
-.left-panel, .right-panel {
-  padding: 10px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  background-color: #fff;
-}
-
-.left-panel {
-  margin-right: 20px;
-}
-
-h3 {
-  font-size: 18px;
-  margin-bottom: 10px;
-}
-
-img {
-  border-radius: 8px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
+  color: #333;
+  box-sizing: border-box;
 }
 
 .el-row {
   margin-top: 20px;
+  flex-grow: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
 }
 
 .el-col {
   padding: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  background-color: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+h2 {
+  font-size: 24px;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 20px;
+  color: #222;
+}
+
+h3 {
+  font-size: 20px;
+  font-weight: bold;
+  margin-bottom: 15px;
+  color: #111;
+  border-bottom: 2px solid #ddd;
+  padding-bottom: 5px;
+}
+
+.left-panel, .middle-panel, .right-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+#pdf-container, #md-container {
+  width: 100%;
+  height: 1000px; /* 固定高度，方便滚动显示 */
+  background-color: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+  overflow-y: auto; /* 只允许垂直方向滚动 */
+  overflow-x: hidden; /* 禁止水平方向滚动 */
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+#md-container::-webkit-scrollbar {
+  width: 8px; /* 滚动条宽度 */
+}
+
+#md-container::-webkit-scrollbar-thumb {
+  background-color: #888; /* 滚动条颜色 */
+  border-radius: 4px; /* 滚动条圆角 */
+}
+
+#md-container::-webkit-scrollbar-thumb:hover {
+  background-color: #555; /* 滚动条 hover 颜色 */
+}
+
+img {
+  border-radius: 8px;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+p {
+  line-height: 1.6;
+  font-size: 16px;
+  color: #444;
+}
+
+.el-button {
+  align-self: center;
+  width: 150px;
+  height: 40px;
+  margin-top: 20px;
+  font-size: 16px;
+  background-color: #3b82f6;
+  border-color: #3b82f6;
+  color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.el-button:hover {
+  background-color: #2563eb;
+  border-color: #2563eb;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.5);
+}
+
+.el-button:focus {
+  outline: none;
+}
+
+@media (max-width: 768px) {
+  .el-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 20px;
+  }
+
+  h2 {
+    font-size: 20px;
+  }
+
+  h3 {
+    font-size: 18px;
+  }
+
+  .el-button {
+    width: 100%;
+  }
 }
 </style>
+
+
